@@ -226,11 +226,12 @@ class Database:
             return await cur.fetchone()
 
     async def search_member(self, system_id: int, query: str) -> List[aiosqlite.Row]:
+        q = query.strip().lower()
         async with self._conn.execute(
             """SELECT * FROM members WHERE system_id=?
-               AND (name LIKE ? OR display_name LIKE ?) AND is_archived=0
+               AND (LOWER(name) LIKE ? OR LOWER(display_name) LIKE ?) AND is_archived=0
                ORDER BY name COLLATE NOCASE""",
-            (system_id, f'%{query}%', f'%{query}%')
+            (system_id, f'%{q}%', f'%{q}%')
         ) as cur:
             return await cur.fetchall()
 
