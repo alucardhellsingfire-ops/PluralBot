@@ -1,0 +1,14 @@
+2026-03-08 09:28:21,605 [WARNING] discord.client: PyNaCl is not installed, voice will NOT be supported
+2026-03-08 09:28:21,606 [WARNING] discord.client: davey is not installed, voice will NOT be supported
+2026-03-08 09:28:21,608 [INFO] discord.client: logging in using static token
+2026-03-08 09:28:22,207 [INFO] PluralCord: Loaded cog: cogs.members
+2026-03-08 09:28:22,221 [INFO] PluralCord: Loaded cog: cogs.fronting
+2026-03-08 09:28:22,233 [INFO] PluralCord: Loaded cog: cogs.journal
+2026-03-08 09:28:22,249 [INFO] PluralCord: Loaded cog: cogs.polls
+2026-03-08 09:28:22,262 [INFO] PluralCord: Loaded cog: cogs.proxying
+2026-03-08 09:28:22,275 [INFO] PluralCord: Loaded cog: cogs.system
+2026-03-08 09:28:22,291 [INFO] PluralCord: Loaded cog: cogs.friends
+2026-03-08 09:28:22,303 [INFO] PluralCord: Loaded cog: cogs.help
+2026-03-08 09:28:23,739 [INFO] PluralCord: Slash commands synced.
+2026-03-08 09:28:24,368 [INFO] discord.gateway: Shard ID None has connected to Gateway (Session ID: 81e4a02b3feb1aa28ae6c7d06ac0e2c3).
+2026-03-08 09:28:26,379 [INFO] PluralCord: PluralCord online as PluralCord#0087 (ID: 1480187229975478292)
