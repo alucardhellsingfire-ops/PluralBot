@@ -38,8 +38,10 @@ class PluralCord(commands.Bot):
         self.db: Database = None
 
     async def setup_hook(self):
-        self.db = Database('pluralcord.db')
+        db_path = os.environ.get('DB_PATH', 'pluralcord.db')
+        self.db = Database(db_path)
         await self.db.init()
+        log.info(f'Database loaded from: {db_path}')
 
         cogs = [
             'cogs.members',
