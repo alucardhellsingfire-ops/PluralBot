@@ -11,48 +11,6 @@ from utils.helpers import (
 )
 
 
-class ConfirmView(discord.ui.View):
-    """A reusable Confirm / Cancel button pair."""
-
-    def __init__(self, original_interaction: discord.Interaction, confirm_label: str = "✅ Confirm", danger: bool = False):
-        super().__init__(timeout=30)
-        self.original_interaction = original_interaction
-        self.confirmed = False
-
-        style = discord.ButtonStyle.danger if danger else discord.ButtonStyle.success
-
-        confirm_btn = discord.ui.Button(label=confirm_label, style=style)
-        cancel_btn = discord.ui.Button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
-
-        confirm_btn.callback = self._confirm
-        cancel_btn.callback = self._cancel
-
-        self.add_item(confirm_btn)
-        self.add_item(cancel_btn)
-
-    async def _confirm(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        if interaction.user.id != self.original_interaction.user.id:
-            await interaction.followup.send("Not your system!", ephemeral=True)
-            return
-        self.confirmed = True
-        self.stop()
-
-    async def _cancel(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        self.confirmed = False
-        embed = discord.Embed(title="Cancelled.", color=discord.Color.greyple())
-        await interaction.edit_original_response(embed=embed, view=None)
-        self.stop()
-
-    async def on_timeout(self):
-        try:
-            embed = discord.Embed(title="Timed out — no changes made.", color=discord.Color.greyple())
-            await self.original_interaction.edit_original_response(embed=embed, view=None)
-        except Exception:
-            pass
-
-
 class FrontingCog(commands.Cog, name="Fronting"):
 
     def __init__(self, bot):
@@ -69,6 +27,43 @@ class FrontingCog(commands.Cog, name="Fronting"):
                     await channel.send(embed=embed)
                 except discord.Forbidden:
                     pass
+
+    def _make_confirm_view(self, interaction, on_confirm, confirm_label="✅ Confirm", danger=False):
+        """
+        Returns a View with Confirm and Cancel buttons.
+        on_confirm is an async callback(btn_interaction) that does the actual work.
+        """
+        style = discord.ButtonStyle.danger if danger else discord.ButtonStyle.success
+        bot = self.bot
+
+        class ConfirmView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=30)
+
+            @discord.ui.button(label=confirm_label, style=style)
+            async def confirm(self, btn_i: discord.Interaction, button: discord.ui.Button):
+                await btn_i.response.defer(ephemeral=True)
+                if btn_i.user.id != interaction.user.id:
+                    await btn_i.followup.send("Not your system!", ephemeral=True)
+                    return
+                for item in self.children:
+                    item.disabled = True
+                await on_confirm(btn_i)
+
+            @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
+            async def cancel(self, btn_i: discord.Interaction, button: discord.ui.Button):
+                await btn_i.response.defer(ephemeral=True)
+                embed = discord.Embed(title="Cancelled — no changes made.", color=discord.Color.greyple())
+                await btn_i.edit_original_response(embed=embed, view=None)
+
+            async def on_timeout(self):
+                try:
+                    embed = discord.Embed(title="Timed out — no changes made.", color=discord.Color.greyple())
+                    await interaction.edit_original_response(embed=embed, view=None)
+                except Exception:
+                    pass
+
+        return ConfirmView()
 
     @front_group.command(name="set", description="Choose who is fronting from a dropdown (replaces current front)")
     @app_commands.describe(note="Optional note (e.g. mood, context)")
@@ -92,7 +87,7 @@ class FrontingCog(commands.Cog, name="Fronting"):
             for m in members[:25]
         ]
 
-        selected_ids = []
+        cog = self
 
         class FrontSetSelect(discord.ui.Select):
             def __init__(self_inner):
@@ -109,33 +104,29 @@ class FrontingCog(commands.Cog, name="Fronting"):
                     await si.followup.send("Not your system!", ephemeral=True)
                     return
 
-                selected_ids.clear()
-                selected_ids.extend(self_inner.values)
-
-                # Build the names of who was selected
+                selected_ids = list(self_inner.values)
                 chosen = [get_member_display(m) for m in members if str(m['id']) in selected_ids]
                 names = ', '.join(f'**{n}**' for n in chosen)
 
-                confirm = ConfirmView(interaction)
-                embed = discord.Embed(
+                async def do_set(btn_i: discord.Interaction):
+                    await cog.bot.db.clear_front(system['id'])
+                    for mid in selected_ids:
+                        await cog.bot.db.set_front(system['id'], int(mid), note)
+                    fronters = await cog.bot.db.get_current_front(system['id'])
+                    result_embed = front_embed(fronters, system['system_name'])
+                    await btn_i.edit_original_response(embed=result_embed, view=None)
+                    await cog._notify(interaction, system, result_embed)
+
+                confirm_embed = discord.Embed(
                     title="Confirm Front Switch",
                     description=f"Set front to: {names}?\n\nThis will replace whoever is currently fronting.",
                     color=discord.Color(0x5865F2)
                 )
                 if note:
-                    embed.add_field(name="Note", value=note)
+                    confirm_embed.add_field(name="Note", value=note)
 
-                await si.edit_original_response(embed=embed, view=confirm)
-                await confirm.wait()
-
-                if confirm.confirmed:
-                    await self.bot.db.clear_front(system['id'])
-                    for mid in selected_ids:
-                        await self.bot.db.set_front(system['id'], int(mid), note)
-                    fronters = await self.bot.db.get_current_front(system['id'])
-                    result_embed = front_embed(fronters, system['system_name'])
-                    await si.edit_original_response(embed=result_embed, view=None)
-                    await self._notify(interaction, system, result_embed)
+                confirm_view = cog._make_confirm_view(interaction, do_set)
+                await si.edit_original_response(embed=confirm_embed, view=confirm_view)
 
         select_view = discord.ui.View(timeout=60)
         select_view.add_item(FrontSetSelect())
@@ -167,7 +158,7 @@ class FrontingCog(commands.Cog, name="Fronting"):
             for m in members[:25]
         ]
 
-        selected_ids = []
+        cog = self
 
         class FrontAddSelect(discord.ui.Select):
             def __init__(self_inner):
@@ -184,31 +175,28 @@ class FrontingCog(commands.Cog, name="Fronting"):
                     await si.followup.send("Not your system!", ephemeral=True)
                     return
 
-                selected_ids.clear()
-                selected_ids.extend(self_inner.values)
-
+                selected_ids = list(self_inner.values)
                 chosen = [get_member_display(m) for m in members if str(m['id']) in selected_ids]
                 names = ', '.join(f'**{n}**' for n in chosen)
 
-                confirm = ConfirmView(interaction)
-                embed = discord.Embed(
+                async def do_add(btn_i: discord.Interaction):
+                    for mid in selected_ids:
+                        await cog.bot.db.set_front(system['id'], int(mid), note)
+                    fronters = await cog.bot.db.get_current_front(system['id'])
+                    result_embed = front_embed(fronters, system['system_name'])
+                    await btn_i.edit_original_response(embed=result_embed, view=None)
+                    await cog._notify(interaction, system, result_embed)
+
+                confirm_embed = discord.Embed(
                     title="Confirm Co-Front Addition",
                     description=f"Add {names} to the current front?",
                     color=discord.Color(0x5865F2)
                 )
                 if note:
-                    embed.add_field(name="Note", value=note)
+                    confirm_embed.add_field(name="Note", value=note)
 
-                await si.edit_original_response(embed=embed, view=confirm)
-                await confirm.wait()
-
-                if confirm.confirmed:
-                    for mid in selected_ids:
-                        await self.bot.db.set_front(system['id'], int(mid), note)
-                    fronters = await self.bot.db.get_current_front(system['id'])
-                    result_embed = front_embed(fronters, system['system_name'])
-                    await si.edit_original_response(embed=result_embed, view=None)
-                    await self._notify(interaction, system, result_embed)
+                confirm_view = cog._make_confirm_view(interaction, do_add)
+                await si.edit_original_response(embed=confirm_embed, view=confirm_view)
 
         select_view = discord.ui.View(timeout=60)
         select_view.add_item(FrontAddSelect())
@@ -238,7 +226,7 @@ class FrontingCog(commands.Cog, name="Fronting"):
             for f in fronters
         ]
 
-        selected_id = []
+        cog = self
 
         class FrontRemoveSelect(discord.ui.Select):
             def __init__(self_inner):
@@ -250,29 +238,25 @@ class FrontingCog(commands.Cog, name="Fronting"):
                     await si.followup.send("Not your system!", ephemeral=True)
                     return
 
-                selected_id.clear()
-                selected_id.append(self_inner.values[0])
-
+                selected_id = self_inner.values[0]
                 chosen_name = next(
-                    (f['display_name'] or f['name'] for f in fronters if str(f['member_id']) == selected_id[0]),
+                    (f['display_name'] or f['name'] for f in fronters if str(f['member_id']) == selected_id),
                     "this member"
                 )
 
-                confirm = ConfirmView(interaction, confirm_label="✅ Remove", danger=True)
-                embed = discord.Embed(
+                async def do_remove(btn_i: discord.Interaction):
+                    await cog.bot.db.remove_from_front(system['id'], int(selected_id))
+                    remaining = await cog.bot.db.get_current_front(system['id'])
+                    result_embed = front_embed(remaining, system['system_name'])
+                    await btn_i.edit_original_response(embed=result_embed, view=None)
+
+                confirm_embed = discord.Embed(
                     title="Confirm Front Removal",
                     description=f"Remove **{chosen_name}** from the front?",
                     color=discord.Color.red()
                 )
-
-                await si.edit_original_response(embed=embed, view=confirm)
-                await confirm.wait()
-
-                if confirm.confirmed:
-                    await self.bot.db.remove_from_front(system['id'], int(selected_id[0]))
-                    remaining = await self.bot.db.get_current_front(system['id'])
-                    result_embed = front_embed(remaining, system['system_name'])
-                    await si.edit_original_response(embed=result_embed, view=None)
+                confirm_view = cog._make_confirm_view(interaction, do_remove, confirm_label="✅ Remove", danger=True)
+                await si.edit_original_response(embed=confirm_embed, view=confirm_view)
 
         select_view = discord.ui.View(timeout=60)
         select_view.add_item(FrontRemoveSelect())
@@ -289,23 +273,24 @@ class FrontingCog(commands.Cog, name="Fronting"):
         if not system:
             return
 
-        confirm = ConfirmView(interaction, confirm_label="✅ Clear Front", danger=True)
-        embed = discord.Embed(
-            title="Confirm Clear Front",
-            description="Remove everyone from the front?",
-            color=discord.Color.red()
-        )
-        await interaction.followup.send(embed=embed, view=confirm, ephemeral=True)
-        await confirm.wait()
+        cog = self
 
-        if confirm.confirmed:
-            await self.bot.db.clear_front(system['id'])
+        async def do_clear(btn_i: discord.Interaction):
+            await cog.bot.db.clear_front(system['id'])
             result_embed = discord.Embed(
                 title=f"🌙 {system['system_name']} — Front Cleared",
                 description="Nobody is currently fronting.",
                 color=discord.Color(0x5865F2)
             )
-            await interaction.edit_original_response(embed=result_embed, view=None)
+            await btn_i.edit_original_response(embed=result_embed, view=None)
+
+        confirm_embed = discord.Embed(
+            title="Confirm Clear Front",
+            description="Remove **everyone** from the front?",
+            color=discord.Color.red()
+        )
+        confirm_view = self._make_confirm_view(interaction, do_clear, confirm_label="✅ Clear Front", danger=True)
+        await interaction.followup.send(embed=confirm_embed, view=confirm_view, ephemeral=True)
 
     @front_group.command(name="view", description="See who is currently fronting")
     async def front_view(self, interaction: discord.Interaction):
@@ -313,9 +298,12 @@ class FrontingCog(commands.Cog, name="Fronting"):
         system = await require_system(interaction, self.bot.db)
         if not system:
             return
-        fronters = await self.bot.db.get_current_front(system['id'])
-        embed = front_embed(fronters, system['system_name'])
-        await interaction.followup.send(embed=embed)
+        try:
+            fronters = await self.bot.db.get_current_front(system['id'])
+            embed = front_embed(fronters, system['system_name'])
+            await interaction.followup.send(embed=embed)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Something went wrong fetching the front: {e}", ephemeral=True)
 
     @front_group.command(name="history", description="View front switch history")
     @app_commands.describe(page="Page number", member="Filter by member name")
