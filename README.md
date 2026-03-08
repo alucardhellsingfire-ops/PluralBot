@@ -51,23 +51,33 @@ Copy and open the generated URL to invite the bot.
 
 ### Step 3 — Run the bot
 
-**Requirements:** Python 3.10+
+**Requirements:** Python 3.10+ — download from [python.org](https://www.python.org/downloads/) if you don't have it.
+When installing, check the box that says **"Add Python to PATH"**.
 
-```bash
-# Clone or download this folder
-cd pluralcord
+Your bot files are already in the right place:
+`C:\Users\Alynn\Desktop\PluralBot`
+
+**Open PowerShell** (press Win + R, type `powershell`, hit Enter) and run these commands one at a time:
+
+```powershell
+# Navigate to your bot folder
+cd C:\Users\Alynn\Desktop\PluralBot
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Set your bot token
-export DISCORD_TOKEN=your_token_here   # Linux/Mac
-set DISCORD_TOKEN=your_token_here      # Windows CMD
-$env:DISCORD_TOKEN="your_token_here"   # Windows PowerShell
+# Set your bot token (replace the part in quotes with your actual token)
+$env:DISCORD_TOKEN="paste-your-token-here"
 
-# Run!
+# Run the bot!
 python bot.py
 ```
+
+You should see `PluralCord online as ...` in the console when it's working.
+
+> **Note:** You'll need to set `$env:DISCORD_TOKEN` again each time you open a new PowerShell window.
+> To avoid this, you can instead open `bot.py` in Notepad and replace `os.environ.get('DISCORD_TOKEN')`
+> with your token in quotes directly — e.g. `token = "your-token-here"` — though keep that file private if you do.
 
 The bot will sync slash commands on startup. This may take up to a minute to appear in Discord.
 
