@@ -4,6 +4,7 @@ A feature-rich replacement for Simply Plural, built with love for the plural com
 """
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 import asyncio
 import logging
@@ -73,6 +74,30 @@ class PluralCord(commands.Bot):
         if isinstance(error, commands.CommandNotFound):
             return
         log.error(f'Command error: {error}')
+
+    async def on_app_command_error(self, interaction: discord.Interaction, error: Exception):
+        """Handle slash command errors so Discord never shows 'application did not respond'."""
+        log.error(
+            f'Slash command error in /{interaction.command.name if interaction.command else "unknown"}: {error}',
+            exc_info=error
+        )
+
+        message = "❌ Something went wrong running that command. Please try again."
+
+        if isinstance(error, app_commands.CommandOnCooldown):
+            message = f"⏳ Command on cooldown. Try again in {error.retry_after:.1f}s."
+        elif isinstance(error, app_commands.MissingPermissions):
+            message = "❌ You don't have permission to use that command."
+        elif isinstance(error, app_commands.BotMissingPermissions):
+            message = f"❌ I'm missing a permission needed for that: `{', '.join(error.missing_permissions)}`"
+
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(message, ephemeral=True)
+            else:
+                await interaction.response.send_message(message, ephemeral=True)
+        except Exception as e:
+            log.error(f'Failed to send error message: {e}')
 
 
 bot = PluralCord()
